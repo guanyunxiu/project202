@@ -4,62 +4,46 @@
       <el-tab-pane label="组件库" name="components">
         <div class="panel-content">
           <div class="section-title">基础组件</div>
-          <draggable
-            v-model="draggableComponents"
-            :group="{ name: 'blocks', pull: 'clone', put: false }"
-            :clone="handleCloneComponent"
-            :sort="false"
-            item-key="id"
-            class="component-list"
-            ghost-class="ghost"
-            chosen-class="chosen"
-          >
-            <template #item="{ element }">
-              <div 
-                class="component-item"
-                :class="`component-type-${element.componentType}`"
-                draggable="true"
-                @dragstart="handleComponentDragStart($event, element)"
-              >
-                <el-icon class="component-icon">
-                  <component :is="getComponentIcon(element.componentType!)" />
-                </el-icon>
-                <span class="component-name">{{ element.name }}</span>
-              </div>
-            </template>
-          </draggable>
+          <div class="component-list">
+            <div 
+              v-for="comp in draggableComponents" 
+              :key="comp.id"
+              class="component-item"
+              :class="`component-type-${comp.componentType}`"
+              draggable="true"
+              @dragstart="handleDragStart($event, { ...comp, __isComponent: true })"
+              @dragend="handleDragEnd"
+            >
+              <el-icon class="component-icon">
+                <component :is="getComponentIcon(comp.componentType!)" />
+              </el-icon>
+              <span class="component-name">{{ comp.name }}</span>
+            </div>
+          </div>
         </div>
       </el-tab-pane>
       
       <el-tab-pane label="数据字段" name="fields">
         <div class="panel-content">
           <div class="section-title">可用字段</div>
-          <draggable
-            v-model="localFields"
-            :group="{ name: 'fields', pull: 'clone', put: false }"
-            :clone="handleCloneField"
-            :sort="false"
-            item-key="id"
-            class="field-list"
-            ghost-class="ghost"
-            chosen-class="chosen"
-          >
-            <template #item="{ element }">
-              <div 
-                class="field-item" 
-                :class="`field-type-${element.type}`"
-                draggable="true"
-                @dragstart="handleFieldDragStart($event, element)"
-                @dblclick="handleDoubleClick(element)"
-              >
-                <el-icon class="field-icon">
-                  <component :is="getTypeIcon(element.type)" />
-                </el-icon>
-                <span class="field-name">{{ element.name }}</span>
-                <span class="field-type-tag">{{ getTypeLabel(element.type) }}</span>
-              </div>
-            </template>
-          </draggable>
+          <div class="field-list">
+            <div 
+              v-for="field in localFields" 
+              :key="field.id"
+              class="field-item" 
+              :class="`field-type-${field.type}`"
+              draggable="true"
+              @dragstart="handleDragStart($event, { ...field, __isField: true })"
+              @dragend="handleDragEnd"
+              @dblclick="handleDoubleClick(field)"
+            >
+              <el-icon class="field-icon">
+                <component :is="getTypeIcon(field.type)" />
+              </el-icon>
+              <span class="field-name">{{ field.name }}</span>
+              <span class="field-type-tag">{{ getTypeLabel(field.type) }}</span>
+            </div>
+          </div>
         </div>
       </el-tab-pane>
       
@@ -76,7 +60,6 @@
 
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue'
-import draggable from 'vuedraggable'
 import { 
   Document, Money, Calendar, Select, 
   Grid, Histogram, DataLine, PieChart, Filter 
@@ -169,24 +152,17 @@ function getComponentIcon(type: string) {
   return icons[type] || Grid
 }
 
-function handleCloneField(field: DataField) {
-  return { ...field, __isField: true }
-}
-
-function handleCloneComponent(comp: DraggableComponent) {
-  return { ...comp, __isComponent: true }
-}
-
-function handleComponentDragStart(event: DragEvent, comp: DraggableComponent) {
-  const dragData = { ...comp, __isComponent: true }
-  event.dataTransfer!.setData('text/plain', JSON.stringify(dragData))
+function handleDragStart(event: DragEvent, data: any) {
+  console.log('Drag start:', data)
+  const jsonData = JSON.stringify(data)
+  console.log('Drag data (JSON):', jsonData)
+  event.dataTransfer!.setData('text/plain', jsonData)
   event.dataTransfer!.effectAllowed = 'copy'
+  event.dataTransfer!.dropEffect = 'copy'
 }
 
-function handleFieldDragStart(event: DragEvent, field: DataField) {
-  const dragData = { ...field, __isField: true }
-  event.dataTransfer!.setData('text/plain', JSON.stringify(dragData))
-  event.dataTransfer!.effectAllowed = 'copy'
+function handleDragEnd(event: DragEvent) {
+  console.log('Drag end:', event)
 }
 
 function handleDoubleClick(field: DataField) {

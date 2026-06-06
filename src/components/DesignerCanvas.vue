@@ -75,7 +75,7 @@
           @dragleave="handleDragLeave"
           @drop="handleDrop"
         >
-          <template v-for="block in sortedBlocks" :key="block.id">
+          <template v-for="block in localBlocks" :key="block.id">
             <div 
               v-if="block.visible"
               class="block-wrapper"
@@ -104,10 +104,6 @@
                 <div 
                   v-else-if="block.type === 'table' && getTableConfig(block.configId)"
                   class="table-block-drop-zone"
-                  :class="{ 'drag-over': dragOverTableId === block.configId }"
-                  @dragover.prevent="handleTableDragOver($event, block.configId)"
-                  @dragleave="handleTableDragLeave"
-                  @drop="handleDropToTable($event, block.configId)"
                 >
                   <ReportTable 
                     v-if="getTableConfig(block.configId)!.columns.length > 0"
@@ -140,9 +136,10 @@
           </template>
           
           <div 
-            v-if="blocks.length === 0" 
+            v-if="localBlocks.length === 0" 
             class="empty-canvas"
             @dragover.prevent="handleDragOver"
+            @dragleave="handleDragLeave"
             @drop="handleDrop"
           >
             <el-icon class="empty-icon"><Grid /></el-icon>
@@ -165,7 +162,6 @@ import type {
   ChartBlockConfig, 
   FilterBlockConfig,
   DataField,
-  DraggableComponent,
   ChartType
 } from '@/types'
 import { useReportDesigner } from '@/composables/useReportDesigner'
@@ -192,9 +188,8 @@ const emit = defineEmits<{
 const { blocks, tableConfigs, chartConfigs, filterConfigs, addBlock, removeBlock, addColumnToTable, selectBlock } = useReportDesigner()
 
 const isDragOver = ref(false)
-const dragOverTableId = ref<string | null>(null)
 
-const sortedBlocks = computed(() => {
+const localBlocks = computed(() => {
   return [...props.reportConfig.blocks].sort((a: LayoutBlock, b: LayoutBlock) => a.y - b.y || a.x - b.x)
 })
 
@@ -239,90 +234,6 @@ function handleTitleUpdate(key: keyof ReportConfig, value: any) {
   emit('update-config', { [key]: value })
 }
 
-function handleDragOver(event: DragEvent) {
-  event.dataTransfer!.dropEffect = 'copy'
-  isDragOver.value = true
-}
-
-function handleDragLeave() {
-  isDragOver.value = false
-}
-
-function handleTableDragOver(event: DragEvent, tableConfigId: string) {
-  event.dataTransfer!.dropEffect = 'copy'
-  dragOverTableId.value = tableConfigId
-}
-
-function handleTableDragLeave() {
-  dragOverTableId.value = null
-}
-
-function handleDrop(event: DragEvent) {
-  event.preventDefault()
-  isDragOver.value = false
-  dragOverTableId.value = null
-  
-  try {
-    const dragData = JSON.parse(event.dataTransfer!.getData('text/plain'))
-    
-    if (dragData.__isComponent) {
-      const compType = dragData.componentType
-      let blockType: 'table' | ChartType | 'filter' = 'table'
-      
-      if (compType === 'table' || compType === 'filter') {
-        blockType = compType
-      } else if (compType === 'bar' || compType === 'line' || compType === 'pie') {
-        blockType = compType as ChartType
-      }
-      
-      emit('add-block', blockType, 0, props.reportConfig.blocks.length)
-      return
-    }
-    
-    if (dragData.__isField) {
-      const field = dragData as DataField
-      if (props.reportConfig.tableConfigs.length === 0) {
-        const newBlock = addBlock('table', 0, props.reportConfig.blocks.length)
-        setTimeout(() => {
-          if (props.reportConfig.tableConfigs.length > 0) {
-            const lastTableConfig = props.reportConfig.tableConfigs[props.reportConfig.tableConfigs.length - 1]
-            addColumnToTable(lastTableConfig.id, field)
-            emit('add-field', lastTableConfig.id, field)
-            if (newBlock) {
-              emit('select-block', newBlock.id)
-            }
-          }
-        }, 0)
-      } else {
-        const lastTableConfig = props.reportConfig.tableConfigs[props.reportConfig.tableConfigs.length - 1]
-        addColumnToTable(lastTableConfig.id, field)
-        emit('add-field', lastTableConfig.id, field)
-      }
-    }
-  } catch (e) {
-    console.log('Drop data parsing failed')
-  }
-}
-
-function handleDropToTable(event: DragEvent, tableConfigId: string) {
-  event.preventDefault()
-  event.stopPropagation()
-  isDragOver.value = false
-  dragOverTableId.value = null
-  
-  try {
-    const dragData = JSON.parse(event.dataTransfer!.getData('text/plain'))
-    
-    if (dragData.__isField) {
-      const field = dragData as DataField
-      addColumnToTable(tableConfigId, field)
-      emit('add-field', tableConfigId, field)
-    }
-  } catch (e) {
-    console.log('Drop to table failed')
-  }
-}
-
 function handleSelectBlock(blockId: string) {
   emit('select-block', blockId)
 }
@@ -333,6 +244,81 @@ function handleDeleteBlock(blockId: string) {
 
 function handlePreview() {
   emit('preview')
+}
+
+function handleDragOver(event: DragEvent) {
+  event.dataTransfer!.dropEffect = 'copy'
+  isDragOver.value = true
+}
+
+function handleDragLeave() {
+  isDragOver.value = false
+}
+
+function handleDrop(event: DragEvent) {
+  event.preventDefault()
+  isDragOver.value = false
+  
+  console.log('Drop event triggered!', event.dataTransfer?.types)
+  
+  try {
+    const rawData = event.dataTransfer!.getData('text/plain')
+    console.log('Raw drop data:', rawData)
+    
+    if (!rawData) {
+      console.log('No drop data received')
+      return
+    }
+    
+    const dragData = JSON.parse(rawData)
+    console.log('Parsed drag data:', dragData)
+    
+    if (dragData.__isComponent) {
+      console.log('Processing component drop:', dragData)
+      const compType = dragData.componentType
+      let blockType: 'table' | ChartType | 'filter' = 'table'
+      if (compType === 'table' || compType === 'filter') {
+        blockType = compType
+      } else if (['bar', 'line', 'pie'].includes(compType)) {
+        blockType = compType as ChartType
+      }
+      
+      const newBlock = addBlock(blockType, 0, props.reportConfig.blocks.length)
+      if (newBlock) {
+        console.log('New block created:', newBlock)
+        emit('select-block', newBlock.id)
+      }
+      return
+    }
+    
+    if (dragData.__isField) {
+      console.log('Processing field drop:', dragData)
+      const field = dragData as DataField
+      if (props.reportConfig.tableConfigs.length === 0) {
+        console.log('No tables exist, creating new table...')
+        const newBlock = addBlock('table', 0, props.reportConfig.blocks.length)
+        setTimeout(() => {
+          if (props.reportConfig.tableConfigs.length > 0) {
+            const lastTableConfig = props.reportConfig.tableConfigs[props.reportConfig.tableConfigs.length - 1]
+            console.log('Adding field to table:', lastTableConfig.id, field)
+            addColumnToTable(lastTableConfig.id, field)
+            emit('add-field', lastTableConfig.id, field)
+            if (newBlock) {
+              console.log('Auto-selecting new block:', newBlock.id)
+              emit('select-block', newBlock.id)
+            }
+          }
+        }, 100)
+      } else {
+        const lastTableConfig = props.reportConfig.tableConfigs[props.reportConfig.tableConfigs.length - 1]
+        console.log('Adding field to existing table:', lastTableConfig.id, field)
+        addColumnToTable(lastTableConfig.id, field)
+        emit('add-field', lastTableConfig.id, field)
+      }
+    }
+  } catch (e) {
+    console.error('Drop data parsing failed:', e)
+  }
 }
 </script>
 
