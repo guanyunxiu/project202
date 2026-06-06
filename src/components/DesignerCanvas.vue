@@ -3,10 +3,23 @@
     <div class="canvas-header">
       <div class="header-left">
         <span class="header-title">报表画布</span>
-        <el-tag size="small" type="info">已添加 {{ columns.length }} 个字段</el-tag>
+        <el-tag size="small" type="info">
+          {{ blocks.length }} 个区块
+        </el-tag>
       </div>
       <div class="header-right">
-        <el-button size="small" @click="$emit('clear-columns')">清空列</el-button>
+        <el-button size="small" @click="handlePreview">
+          <el-icon><FullScreen /></el-icon>
+          全屏预览
+        </el-button>
+        <el-button size="small" type="success" @click="$emit('export-excel')">
+          <el-icon><Download /></el-icon>
+          导出 Excel
+        </el-button>
+        <el-button size="small" type="warning" @click="$emit('export-pdf')">
+          <el-icon><Picture /></el-icon>
+          导出 PDF
+        </el-button>
       </div>
     </div>
     
@@ -42,85 +55,8 @@
         </el-form>
       </div>
 
-      <div class="columns-area">
-        <div class="columns-header">
-          <span class="columns-title">表格列配置</span>
-          <el-text type="info" size="small">拖拽排序，点击选中编辑，点击×删除</el-text>
-        </div>
-        
-        <div 
-          class="columns-drop-zone"
-          @dragover.prevent
-          @drop="handleDrop"
-        >
-          <draggable
-            v-model="columnsModel"
-            group="fields"
-            item-key="id"
-            class="columns-list"
-            ghost-class="ghost"
-            chosen-class="chosen"
-            drag-class="drag"
-            @change="handleDragChange"
-          >
-            <template #item="{ element }">
-              <div 
-                class="column-item" 
-                :class="{ 
-                  active: selectedColumnId === element.id,
-                  invisible: !element.visible 
-                }"
-                @click="handleSelectColumn(element.id)"
-              >
-                <div class="column-drag-handle">
-                  <el-icon><Rank /></el-icon>
-                </div>
-                <div class="column-info">
-                  <div class="column-name">{{ element.columnName }}</div>
-                  <div class="column-field">{{ element.fieldName }}</div>
-                </div>
-                <div class="column-props">
-                  <el-tag size="small" :type="getAlignType(element.align)">
-                    {{ getAlignLabel(element.align) }}
-                  </el-tag>
-                  <el-tag size="small" type="info">
-                    {{ element.width }}px
-                  </el-tag>
-                  <el-tag 
-                    v-if="!element.visible" 
-                    size="small" 
-                    type="danger"
-                  >
-                    隐藏
-                  </el-tag>
-                </div>
-                <button 
-                  class="column-delete"
-                  @click.stop="handleRemoveColumn(element.id)"
-                >
-                  <el-icon><Close /></el-icon>
-                </button>
-              </div>
-            </template>
-          </draggable>
-          
-          <div v-if="columns.length === 0" class="empty-tip">
-            <el-icon class="empty-icon"><DocumentAdd /></el-icon>
-            <p>请从左侧拖拽字段到此处</p>
-            <p class="empty-sub">或双击左侧字段添加</p>
-          </div>
-        </div>
-      </div>
-
-      <div class="preview-area">
-        <div class="preview-header">
-          <span class="preview-title">实时预览</span>
-          <el-button size="small" type="primary" @click="$emit('export-excel')">
-            <el-icon><Download /></el-icon>
-            导出Excel
-          </el-button>
-        </div>
-        <div class="preview-content">
+      <div class="layout-canvas" id="report-content">
+        <div class="report-title-section">
           <h2 
             class="report-title" 
             :style="{
@@ -130,35 +66,85 @@
           >
             {{ reportConfig.title || '未命名报表' }}
           </h2>
-          <el-table 
-            :data="tableData" 
-            border 
-            stripe
-            style="width: 100%"
-            size="small"
+        </div>
+        
+        <div 
+          class="blocks-container"
+          @dragover.prevent="handleDragOver"
+          @drop="handleDrop"
+        >
+          <template v-for="block in sortedBlocks" :key="block.id">
+            <div 
+              v-if="block.visible"
+              class="block-wrapper"
+              :class="{ 'block-selected': selectedBlockId === block.id }"
+              :style="getBlockStyle(block)"
+              @click="handleSelectBlock(block.id)"
+            >
+              <div class="block-header">
+                <span class="block-title">{{ block.title }}</span>
+                <span class="block-type-tag">
+                  <el-tag size="small" :type="getBlockTagType(block.type)">
+                    {{ getBlockTypeName(block.type) }}
+                  </el-tag>
+                </span>
+              </div>
+              
+              <div 
+                class="block-content"
+                @click.stop
+              >
+                <ReportFilter
+                  v-if="block.type === 'filter' && getFilterConfig(block.configId)"
+                  :filter-block-config="getFilterConfig(block.configId)!"
+                />
+                
+                <div 
+                  v-else-if="block.type === 'table' && getTableConfig(block.configId)"
+                  class="table-block-drop-zone"
+                  @dragover.prevent
+                  @drop="handleDropToTable($event, block.configId)"
+                >
+                  <ReportTable 
+                    v-if="getTableConfig(block.configId)!.columns.length > 0"
+                    :table-config="getTableConfig(block.configId)!"
+                  />
+                  <div v-else class="empty-table-tip">
+                    <el-icon><DocumentAdd /></el-icon>
+                    <p>请从左侧拖拽字段到此表格</p>
+                  </div>
+                </div>
+                
+                <ReportChart
+                  v-else-if="block.type === 'chart' && getChartConfig(block.configId)"
+                  :chart-config="getChartConfig(block.configId)!.chartConfig"
+                  :height="300"
+                />
+              </div>
+              
+              <div class="block-actions">
+                <el-button 
+                  size="small" 
+                  text 
+                  type="danger"
+                  @click.stop="handleDeleteBlock(block.id)"
+                >
+                  <el-icon><Delete /></el-icon>
+                </el-button>
+              </div>
+            </div>
+          </template>
+          
+          <div 
+            v-if="blocks.length === 0" 
+            class="empty-canvas"
+            @dragover.prevent
+            @drop="handleDrop"
           >
-            <el-table-column
-              v-for="col in visibleColumns"
-              :key="col.id"
-              :prop="col.fieldName"
-              :label="col.columnName"
-              :width="col.width"
-              :align="col.align"
-            >
-              <template #default="{ row }">
-                {{ formatValue(row[col.fieldName], col.format, col.type) }}
-              </template>
-            </el-table-column>
-            <el-table-column
-              v-if="visibleColumns.length === 0"
-              label="请添加列"
-              align="center"
-            >
-              <template #default>
-                <el-text type="info">从左侧拖拽字段开始设计报表</el-text>
-              </template>
-            </el-table-column>
-          </el-table>
+            <el-icon class="empty-icon"><Grid /></el-icon>
+            <p class="empty-title">拖拽组件到此处开始设计</p>
+            <p class="empty-sub">支持表格、柱状图、折线图、饼图、筛选器</p>
+          </div>
         </div>
       </div>
     </div>
@@ -166,102 +152,156 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import draggable from 'vuedraggable'
-import { Rank, Close, DocumentAdd, Download } from '@element-plus/icons-vue'
-import type { TableColumn, ReportConfig, DataField, MockDataItem } from '@/types'
-import { mockTableData } from '@/data/mockData'
+import { computed } from 'vue'
+import { FullScreen, Download, Picture, DocumentAdd, Delete, Grid } from '@element-plus/icons-vue'
+import type { 
+  LayoutBlock, 
+  ReportConfig, 
+  TableBlockConfig, 
+  ChartBlockConfig, 
+  FilterBlockConfig,
+  DataField,
+  DraggableComponent,
+  ChartType
+} from '@/types'
+import { useReportDesigner } from '@/composables/useReportDesigner'
+import ReportTable from './ReportTable.vue'
+import ReportChart from './ReportChart.vue'
+import ReportFilter from './ReportFilter.vue'
 
 const props = defineProps<{
-  columns: TableColumn[]
-  selectedColumnId: string | null
   reportConfig: ReportConfig
-  formatValue: (value: any, format: string, type: string) => string
+  selectedBlockId: string | null
 }>()
 
 const emit = defineEmits<{
-  (e: 'add-field', field: DataField): void
-  (e: 'remove-column', columnId: string): void
-  (e: 'select-column', columnId: string): void
   (e: 'update-config', config: Partial<ReportConfig>): void
-  (e: 'clear-columns'): void
+  (e: 'select-block', blockId: string): void
+  (e: 'add-block', type: 'table' | ChartType | 'filter', x: number, y: number): void
+  (e: 'remove-block', blockId: string): void
+  (e: 'add-field', tableConfigId: string, field: DataField): void
   (e: 'export-excel'): void
-  (e: 'update-columns', columns: TableColumn[]): void
+  (e: 'export-pdf'): void
+  (e: 'preview'): void
 }>()
 
-const tableData = ref<MockDataItem[]>([...mockTableData])
+const { blocks, tableConfigs, chartConfigs, filterConfigs, addBlock, removeBlock, addColumnToTable, selectBlock } = useReportDesigner()
 
-const columnsModel = computed({
-  get: () => [...props.columns],
-  set: (value: TableColumn[]) => {
-    const updatedColumns = value.map((col, index) => ({
-      ...col,
-      order: index
-    }))
-    emit('update-columns', updatedColumns)
-  }
+const sortedBlocks = computed(() => {
+  return [...props.reportConfig.blocks].sort((a: LayoutBlock, b: LayoutBlock) => a.y - b.y || a.x - b.x)
 })
 
-const visibleColumns = computed(() => {
-  return [...props.columns]
-    .filter((col: TableColumn) => col.visible)
-    .sort((a: TableColumn, b: TableColumn) => a.order - b.order)
-})
-
-function handleDrop(event: DragEvent) {
-  event.preventDefault()
+function getTableConfig(configId: string): TableBlockConfig | undefined {
+  return props.reportConfig.tableConfigs.find((c: TableBlockConfig) => c.id === configId)
 }
 
-function handleDragChange(event: any) {
-  if (event.added) {
-    const newField = event.added.element
-    if (newField && !newField.columnName) {
-      const tempId = newField.id
-      const currentColumns = columnsModel.value.filter(
-        (col: TableColumn) => col.id !== tempId || col.columnName
-      )
-      emit('update-columns', currentColumns)
-      emit('add-field', newField)
-    }
+function getChartConfig(configId: string): ChartBlockConfig | undefined {
+  return props.reportConfig.chartConfigs.find((c: ChartBlockConfig) => c.id === configId)
+}
+
+function getFilterConfig(configId: string): FilterBlockConfig | undefined {
+  return props.reportConfig.filterConfigs.find((c: FilterBlockConfig) => c.id === configId)
+}
+
+function getBlockStyle(block: LayoutBlock) {
+  return {
+    gridColumn: `span ${block.width}`,
+    gridRow: `span ${block.height}`
   }
 }
 
-function handleDragEnd() {
-  const updatedColumns = props.columns.map((col: TableColumn, index: number) => ({
-    ...col,
-    order: index
-  }))
-  emit('update-columns', updatedColumns)
+function getBlockTypeName(type: string) {
+  const names: Record<string, string> = {
+    table: '表格',
+    chart: '图表',
+    filter: '筛选'
+  }
+  return names[type] || type
 }
 
-function handleSelectColumn(columnId: string) {
-  emit('select-column', columnId)
-}
-
-function handleRemoveColumn(columnId: string) {
-  emit('remove-column', columnId)
+function getBlockTagType(type: string) {
+  const types: Record<string, string> = {
+    table: 'primary',
+    chart: 'success',
+    filter: 'warning'
+  }
+  return types[type] || 'info'
 }
 
 function handleTitleUpdate(key: keyof ReportConfig, value: any) {
   emit('update-config', { [key]: value })
 }
 
-function getAlignLabel(align: string) {
-  const labels: { [key: string]: string } = {
-    left: '左对齐',
-    center: '居中',
-    right: '右对齐'
-  }
-  return labels[align] || '左对齐'
+function handleDragOver(event: DragEvent) {
+  event.dataTransfer!.dropEffect = 'copy'
 }
 
-function getAlignType(align: string) {
-  const types: { [key: string]: string } = {
-    left: 'primary',
-    center: 'success',
-    right: 'warning'
+function handleDrop(event: DragEvent) {
+  event.preventDefault()
+  
+  try {
+    const dragData = JSON.parse(event.dataTransfer!.getData('text/plain'))
+    
+    if (dragData.__isComponent) {
+      const compType = dragData.componentType
+      let blockType: 'table' | ChartType | 'filter' = 'table'
+      
+      if (compType === 'table' || compType === 'filter') {
+        blockType = compType
+      } else if (compType === 'bar' || compType === 'line' || compType === 'pie') {
+        blockType = compType as ChartType
+      }
+      
+      emit('add-block', blockType, 0, props.reportConfig.blocks.length)
+      return
+    }
+    
+    if (dragData.__isField) {
+      const field = dragData as DataField
+      if (props.reportConfig.tableConfigs.length === 0) {
+        emit('add-block', 'table', 0, props.reportConfig.blocks.length)
+        setTimeout(() => {
+          if (props.reportConfig.tableConfigs.length > 0) {
+            const lastTableConfig = props.reportConfig.tableConfigs[props.reportConfig.tableConfigs.length - 1]
+            addColumnToTable(lastTableConfig.id, field)
+          }
+        }, 0)
+      } else {
+        const lastTableConfig = props.reportConfig.tableConfigs[props.reportConfig.tableConfigs.length - 1]
+        addColumnToTable(lastTableConfig.id, field)
+      }
+    }
+  } catch (e) {
+    console.log('Drop data parsing failed')
   }
-  return types[align] || 'primary'
+}
+
+function handleDropToTable(event: DragEvent, tableConfigId: string) {
+  event.preventDefault()
+  event.stopPropagation()
+  
+  try {
+    const dragData = JSON.parse(event.dataTransfer!.getData('text/plain'))
+    
+    if (dragData.__isField) {
+      const field = dragData as DataField
+      addColumnToTable(tableConfigId, field)
+    }
+  } catch (e) {
+    console.log('Drop to table failed')
+  }
+}
+
+function handleSelectBlock(blockId: string) {
+  emit('select-block', blockId)
+}
+
+function handleDeleteBlock(blockId: string) {
+  emit('remove-block', blockId)
+}
+
+function handlePreview() {
+  emit('preview')
 }
 </script>
 
@@ -294,6 +334,11 @@ function getAlignType(align: string) {
   color: #303133;
 }
 
+.header-right {
+  display: flex;
+  gap: 8px;
+}
+
 .canvas-content {
   flex: 1;
   overflow-y: auto;
@@ -314,179 +359,146 @@ function getAlignType(align: string) {
   margin: 0;
 }
 
-.columns-area {
+.layout-canvas {
+  flex: 1;
   background: #fff;
   border-radius: 8px;
-  padding: 20px;
+  padding: 24px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  min-height: 500px;
 }
 
-.columns-header {
+.report-title-section {
+  margin-bottom: 24px;
+}
+
+.report-title {
+  margin: 0;
+  color: #303133;
+  font-weight: 700;
+}
+
+.blocks-container {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  grid-auto-rows: 80px;
+  gap: 16px;
+  min-height: 400px;
+}
+
+.block-wrapper {
+  position: relative;
+  background: #fafafa;
+  border: 2px solid #e4e7ed;
+  border-radius: 8px;
+  transition: all 0.2s;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.block-wrapper:hover {
+  border-color: #b3d8ff;
+  box-shadow: 0 4px 12px rgba(64, 158, 255, 0.15);
+}
+
+.block-selected {
+  border-color: #409eff !important;
+  box-shadow: 0 0 0 3px rgba(64, 158, 255, 0.2) !important;
+}
+
+.block-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 16px;
+  padding: 8px 12px;
+  background: #f5f7fa;
+  border-bottom: 1px solid #e4e7ed;
+  cursor: move;
 }
 
-.columns-title {
+.block-title {
   font-size: 14px;
   font-weight: 600;
   color: #303133;
 }
 
-.columns-drop-zone {
-  min-height: 120px;
+.block-content {
+  flex: 1;
+  overflow: auto;
+  padding: 0;
+}
+
+.table-block-drop-zone {
+  width: 100%;
+  height: 100%;
+  min-height: 200px;
+}
+
+.empty-table-tip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 200px;
+  color: #909399;
   border: 2px dashed #dcdfe6;
-  border-radius: 8px;
-  padding: 12px;
+  margin: 8px;
+  border-radius: 6px;
   transition: all 0.3s;
 }
 
-.columns-drop-zone:hover {
+.empty-table-tip:hover {
   border-color: #409eff;
   background: #f5faff;
 }
 
-.columns-list {
-  min-height: 80px;
-}
-
-.column-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
-  margin-bottom: 8px;
-  background: #f5f7fa;
-  border: 2px solid transparent;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.column-item:hover {
-  background: #ecf5ff;
-  border-color: #b3d8ff;
-}
-
-.column-item.active {
-  background: #ecf5ff;
-  border-color: #409eff;
-}
-
-.column-item.invisible {
-  opacity: 0.5;
-}
-
-.column-drag-handle {
-  color: #c0c4cc;
-  cursor: move;
-  padding: 4px;
-}
-
-.column-drag-handle:hover {
-  color: #409eff;
-}
-
-.column-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.column-name {
-  font-size: 14px;
-  font-weight: 500;
-  color: #303133;
-}
-
-.column-field {
-  font-size: 12px;
-  color: #909399;
-}
-
-.column-props {
-  display: flex;
-  gap: 6px;
-}
-
-.column-delete {
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: #c0c4cc;
-  padding: 4px;
-  border-radius: 4px;
-  transition: all 0.2s;
-}
-
-.column-delete:hover {
-  background: #fef0f0;
-  color: #f56c6c;
-}
-
-.ghost {
-  opacity: 0.5;
-  background: #c8ebfb !important;
-}
-
-.chosen {
-  background: #ecf5ff !important;
-}
-
-.drag {
-  opacity: 0.8;
-}
-
-.empty-tip {
-  text-align: center;
-  padding: 40px 20px;
-  color: #909399;
-}
-
-.empty-icon {
+.empty-table-tip .el-icon {
   font-size: 48px;
   color: #dcdfe6;
   margin-bottom: 12px;
 }
 
-.empty-sub {
-  font-size: 12px;
-  color: #c0c4cc;
-  margin-top: 4px;
+.block-actions {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 10;
 }
 
-.preview-area {
-  background: #fff;
-  border-radius: 8px;
-  padding: 20px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  flex: 1;
+.empty-canvas {
+  grid-column: 1 / -1;
   display: flex;
   flex-direction: column;
-  min-height: 300px;
-}
-
-.preview-header {
-  display: flex;
-  justify-content: space-between;
   align-items: center;
+  justify-content: center;
+  border: 3px dashed #dcdfe6;
+  border-radius: 12px;
+  min-height: 400px;
+  color: #909399;
+  transition: all 0.3s;
+}
+
+.empty-canvas:hover {
+  border-color: #409eff;
+  background: #f5faff;
+}
+
+.empty-icon {
+  font-size: 64px;
+  color: #dcdfe6;
   margin-bottom: 16px;
 }
 
-.preview-title {
+.empty-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.empty-sub {
   font-size: 14px;
-  font-weight: 600;
-  color: #303133;
-}
-
-.preview-content {
-  flex: 1;
-  overflow: auto;
-}
-
-.report-title {
-  margin-bottom: 16px;
-  color: #303133;
-  font-weight: 600;
+  color: #c0c4cc;
 }
 </style>

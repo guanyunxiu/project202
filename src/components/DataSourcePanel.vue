@@ -1,52 +1,138 @@
 <template>
   <div class="data-source-panel">
-    <div class="panel-header">
-      <span class="header-title">数据源字段</span>
-    </div>
-    <div class="panel-content">
-      <draggable
-        v-model="localFields"
-        :group="{ name: 'fields', pull: 'clone', put: false }"
-        :clone="handleClone"
-        :sort="false"
-        item-key="id"
-        class="field-list"
-        ghost-class="ghost"
-        chosen-class="chosen"
-      >
-        <template #item="{ element }">
-          <div class="field-item" :class="`field-type-${element.type}`">
-            <el-icon class="field-icon">
-              <component :is="getTypeIcon(element.type)" />
-            </el-icon>
-            <span class="field-name">{{ element.name }}</span>
-            <span class="field-type-tag">{{ getTypeLabel(element.type) }}</span>
-          </div>
-        </template>
-      </draggable>
-    </div>
+    <el-tabs v-model="activeTab">
+      <el-tab-pane label="组件库" name="components">
+        <div class="panel-content">
+          <div class="section-title">基础组件</div>
+          <draggable
+            v-model="draggableComponents"
+            :group="{ name: 'blocks', pull: 'clone', put: false }"
+            :clone="handleCloneComponent"
+            :sort="false"
+            item-key="id"
+            class="component-list"
+            ghost-class="ghost"
+            chosen-class="chosen"
+          >
+            <template #item="{ element }">
+              <div 
+                class="component-item"
+                :class="`component-type-${element.componentType}`"
+              >
+                <el-icon class="component-icon">
+                  <component :is="getComponentIcon(element.componentType!)" />
+                </el-icon>
+                <span class="component-name">{{ element.name }}</span>
+              </div>
+            </template>
+          </draggable>
+        </div>
+      </el-tab-pane>
+      
+      <el-tab-pane label="数据字段" name="fields">
+        <div class="panel-content">
+          <div class="section-title">可用字段</div>
+          <draggable
+            v-model="localFields"
+            :group="{ name: 'fields', pull: 'clone', put: false }"
+            :clone="handleCloneField"
+            :sort="false"
+            item-key="id"
+            class="field-list"
+            ghost-class="ghost"
+            chosen-class="chosen"
+          >
+            <template #item="{ element }">
+              <div 
+                class="field-item" 
+                :class="`field-type-${element.type}`"
+                @dblclick="handleDoubleClick(element)"
+              >
+                <el-icon class="field-icon">
+                  <component :is="getTypeIcon(element.type)" />
+                </el-icon>
+                <span class="field-name">{{ element.name }}</span>
+                <span class="field-type-tag">{{ getTypeLabel(element.type) }}</span>
+              </div>
+            </template>
+          </draggable>
+        </div>
+      </el-tab-pane>
+      
+      <el-tab-pane label="数据源" name="datasource">
+        <DataSourceConfig />
+      </el-tab-pane>
+    </el-tabs>
+    
     <div class="panel-footer">
-      <el-text type="info" size="small">双击或拖拽字段到画布</el-text>
+      <el-text type="info" size="small">拖拽组件到画布开始设计</el-text>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, computed } from 'vue'
 import draggable from 'vuedraggable'
-import { Document, Money, Calendar, Select } from '@element-plus/icons-vue'
-import type { DataField } from '@/types'
-import { mockDataFields } from '@/data/mockData'
+import { 
+  Document, Money, Calendar, Select, 
+  Grid, Histogram, DataLine, PieChart, Filter 
+} from '@element-plus/icons-vue'
+import type { DataField, DraggableComponent } from '@/types'
+import { useReportDesigner } from '@/composables/useReportDesigner'
+import DataSourceConfig from './DataSourceConfig.vue'
 
 const emit = defineEmits<{
   (e: 'add-field', field: DataField): void
+  (e: 'add-block', type: string): void
 }>()
 
-const localFields = ref<DataField[]>([...mockDataFields])
+const { dataFields, selectedBlock, selectedBlockConfig, addColumnToTable, addFilter } = useReportDesigner()
 
-watch(() => mockDataFields, (newFields) => {
+const activeTab = ref('components')
+
+const localFields = ref<DataField[]>([...dataFields.value])
+
+watch(() => dataFields.value, (newFields) => {
   localFields.value = [...newFields]
 }, { deep: true })
+
+const draggableComponents = computed<DraggableComponent[]>(() => [
+  {
+    id: 'comp-table',
+    type: 'component',
+    componentType: 'table',
+    name: '数据表格',
+    icon: 'Grid'
+  },
+  {
+    id: 'comp-bar',
+    type: 'component',
+    componentType: 'bar',
+    name: '柱状图',
+    icon: 'Histogram'
+  },
+  {
+    id: 'comp-line',
+    type: 'component',
+    componentType: 'line',
+    name: '折线图',
+    icon: 'DataLine'
+  },
+  {
+    id: 'comp-pie',
+    type: 'component',
+    componentType: 'pie',
+    name: '饼图',
+    icon: 'PieChart'
+  },
+  {
+    id: 'comp-filter',
+    type: 'component',
+    componentType: 'filter',
+    name: '筛选条件',
+    icon: 'Filter'
+  }
+])
 
 function getTypeIcon(type: string) {
   const icons: { [key: string]: any } = {
@@ -68,8 +154,32 @@ function getTypeLabel(type: string) {
   return labels[type] || '文本'
 }
 
-function handleClone(field: DataField) {
-  return { ...field }
+function getComponentIcon(type: string) {
+  const icons: { [key: string]: any } = {
+    table: Grid,
+    bar: Histogram,
+    line: DataLine,
+    pie: PieChart,
+    filter: Filter
+  }
+  return icons[type] || Grid
+}
+
+function handleCloneField(field: DataField) {
+  return { ...field, __isField: true }
+}
+
+function handleCloneComponent(comp: DraggableComponent) {
+  return { ...comp, __isComponent: true }
+}
+
+function handleDoubleClick(field: DataField) {
+  if (selectedBlock.value?.type === 'table' && selectedBlockConfig.value) {
+    addColumnToTable(selectedBlockConfig.value.id, field)
+    emit('add-field', field)
+  } else {
+    emit('add-field', field)
+  }
 }
 </script>
 
@@ -82,22 +192,82 @@ function handleClone(field: DataField) {
   border-right: 1px solid #e4e7ed;
 }
 
-.panel-header {
-  padding: 16px;
-  border-bottom: 1px solid #e4e7ed;
-  background: #f5f7fa;
-}
-
-.header-title {
-  font-size: 16px;
-  font-weight: 600;
-  color: #303133;
+:deep(.el-tabs__header) {
+  margin: 0;
 }
 
 .panel-content {
   flex: 1;
   overflow-y: auto;
   padding: 12px;
+}
+
+.section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #606266;
+  margin-bottom: 12px;
+  padding-left: 8px;
+  border-left: 3px solid #409eff;
+}
+
+.component-list {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.component-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 16px 8px;
+  background: #f5f7fa;
+  border: 2px solid #dcdfe6;
+  border-radius: 8px;
+  cursor: move;
+  transition: all 0.2s;
+}
+
+.component-item:hover {
+  background: #ecf5ff;
+  border-color: #409eff;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(64, 158, 255, 0.15);
+}
+
+.component-item.component-type-table {
+  border-left: 4px solid #409eff;
+}
+
+.component-item.component-type-bar {
+  border-left: 4px solid #67c23a;
+}
+
+.component-item.component-type-line {
+  border-left: 4px solid #e6a23c;
+}
+
+.component-item.component-type-pie {
+  border-left: 4px solid #f56c6c;
+}
+
+.component-item.component-type-filter {
+  border-left: 4px solid #909399;
+}
+
+.component-icon {
+  font-size: 28px;
+  color: #606266;
+}
+
+.component-name {
+  font-size: 12px;
+  color: #303133;
+  font-weight: 500;
 }
 
 .field-list {
@@ -171,5 +341,6 @@ function handleClone(field: DataField) {
   padding: 12px 16px;
   border-top: 1px solid #e4e7ed;
   background: #fafafa;
+  text-align: center;
 }
 </style>

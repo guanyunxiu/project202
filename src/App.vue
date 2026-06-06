@@ -28,28 +28,33 @@
 
       <section class="main-content">
         <DesignerCanvas
-          :columns="tableColumns"
-          :selected-column-id="selectedColumnId"
           :report-config="reportConfig"
-          :format-value="formatValue"
-          @add-field="handleAddField"
-          @remove-column="handleRemoveColumn"
-          @select-column="handleSelectColumn"
+          :selected-block-id="selectedBlockId"
           @update-config="handleUpdateConfig"
-          @clear-columns="handleClearColumns"
+          @add-block="handleAddBlock"
+          @remove-block="handleRemoveBlock"
+          @select-block="handleSelectBlock"
+          @add-field="handleAddFieldToTable"
           @export-excel="handleExportExcel"
-          @update-columns="handleUpdateColumns"
+          @export-pdf="handleExportPDF"
+          @preview="handlePreview"
         />
       </section>
 
       <aside class="sidebar right-sidebar">
-        <PropertyPanel
-          :selected-column="selectedColumn"
-          @update-column="handleUpdateColumn"
-          @remove-column="handleRemoveColumn"
-        />
+        <PropertyPanel :selected-block="selectedBlock" />
       </aside>
     </main>
+
+    <FullscreenPreview
+      :visible="fullscreenPreview.visible"
+      :title="fullscreenPreview.title"
+      :report-config="reportConfig"
+      @update:model-value="fullscreenPreview.visible = $event"
+      @close="handleClosePreview"
+      @export-excel="handleExportExcel"
+      @export-pdf="handleExportFullscreenPDF"
+    />
 
     <el-dialog
       v-model="configDialogVisible"
@@ -95,28 +100,36 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { DataAnalysis, Upload, FolderOpened, Delete, Download } from '@element-plus/icons-vue'
+import { DataAnalysis, Upload, FolderOpened, Delete } from '@element-plus/icons-vue'
 import DataSourcePanel from '@/components/DataSourcePanel.vue'
 import DesignerCanvas from '@/components/DesignerCanvas.vue'
 import PropertyPanel from '@/components/PropertyPanel.vue'
+import FullscreenPreview from '@/components/FullscreenPreview.vue'
 import { useReportDesigner } from '@/composables/useReportDesigner'
-import type { DataField, TableColumn, ReportConfig } from '@/types'
+import type { 
+  DataField, 
+  ReportConfig, 
+  ChartType
+} from '@/types'
 
 const {
-  tableColumns,
-  selectedColumnId,
-  selectedColumn,
+  dataFields,
   reportConfig,
-  addColumn,
-  removeColumn,
-  selectColumn,
-  updateColumn,
+  selectedBlockId,
+  selectedBlock,
+  fullscreenPreview,
+  addBlock,
+  removeBlock,
+  addColumnToTable,
+  selectBlock,
   updateReportConfig,
-  formatValue,
   saveConfig,
   loadConfig,
   clearConfig,
-  exportExcel
+  exportExcel,
+  exportPDF,
+  openFullscreenPreview,
+  closeFullscreenPreview
 } = useReportDesigner()
 
 const configDialogVisible = ref(false)
@@ -131,35 +144,45 @@ onMounted(() => {
 })
 
 function handleAddField(field: DataField) {
-  addColumn(field)
+  if (reportConfig.value.tableConfigs.length === 0) {
+    addBlock('table', 0, reportConfig.value.blocks.length)
+    setTimeout(() => {
+      if (reportConfig.value.tableConfigs.length > 0) {
+        const lastTableConfig = reportConfig.value.tableConfigs[reportConfig.value.tableConfigs.length - 1]
+        addColumnToTable(lastTableConfig.id, field)
+        ElMessage.success(`已添加字段: ${field.name}`)
+      }
+    }, 0)
+  } else {
+    const lastTableConfig = reportConfig.value.tableConfigs[reportConfig.value.tableConfigs.length - 1]
+    addColumnToTable(lastTableConfig.id, field)
+    ElMessage.success(`已添加字段: ${field.name}`)
+  }
+}
+
+function handleAddFieldToTable(tableConfigId: string, field: DataField) {
+  addColumnToTable(tableConfigId, field)
   ElMessage.success(`已添加字段: ${field.name}`)
 }
 
-function handleRemoveColumn(columnId: string) {
-  removeColumn(columnId)
-  ElMessage.info('已删除该列')
+function handleAddBlock(type: 'table' | ChartType | 'filter', x: number, y: number) {
+  addBlock(type, x, y)
+  ElMessage.success('已添加组件')
 }
 
-function handleSelectColumn(columnId: string) {
-  selectColumn(columnId)
+function handleRemoveBlock(blockId: string) {
+  removeBlock(blockId)
+  ElMessage.info('已删除该区块')
 }
 
-function handleUpdateColumn(columnId: string, updates: Partial<TableColumn>) {
-  updateColumn(columnId, updates)
+function handleSelectBlock(blockId: string) {
+  selectBlock(blockId)
 }
+
+
 
 function handleUpdateConfig(config: Partial<ReportConfig>) {
   updateReportConfig(config)
-}
-
-function handleUpdateColumns(columns: TableColumn[]) {
-  tableColumns.value = columns
-}
-
-function handleClearColumns() {
-  tableColumns.value = []
-  selectedColumnId.value = null
-  ElMessage.info('已清空所有列')
 }
 
 function handleSave() {
@@ -186,6 +209,24 @@ function handleClear() {
 function handleExportExcel() {
   exportExcel()
   ElMessage.success('Excel导出成功')
+}
+
+function handleExportPDF() {
+  exportPDF('report-content')
+  ElMessage.success('PDF导出成功')
+}
+
+function handleExportFullscreenPDF() {
+  exportPDF('fullscreen-preview-content')
+  ElMessage.success('PDF导出成功')
+}
+
+function handlePreview() {
+  openFullscreenPreview()
+}
+
+function handleClosePreview() {
+  closeFullscreenPreview()
 }
 </script>
 
@@ -258,5 +299,20 @@ function handleExportExcel() {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+}
+
+:deep(.fullscreen-preview-dialog) {
+  --el-dialog-margin: 0;
+  --el-dialog-border-radius: 0;
+}
+
+:deep(.fullscreen-preview-dialog .el-dialog__header) {
+  padding: 0;
+  margin-right: 0;
+  border-bottom: 1px solid #e4e7ed;
+}
+
+:deep(.fullscreen-preview-dialog .el-dialog__body) {
+  padding: 0;
 }
 </style>
