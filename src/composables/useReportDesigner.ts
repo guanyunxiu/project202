@@ -22,6 +22,33 @@ import axios from 'axios'
 
 const STORAGE_KEY = 'report_designer_config'
 
+// 单例状态 - 确保所有组件共享同一个状态
+let singletonState: ReturnType<typeof createState> | null = null
+
+function createState() {
+  const dataFields = ref<DataField[]>([...mockDataFields])
+  const tableData = ref<MockDataItem[]>([...mockTableData])
+  const originalTableData = ref<MockDataItem[]>([...mockTableData])
+  const selectedBlockId = ref<string | null>(null)
+  const fullscreenPreview = ref<FullscreenPreviewState>({ visible: false, title: '' })
+  const loading = ref(false)
+
+  const reportConfig = ref<ReportConfig>({
+    ...defaultConfig,
+    dataSources: [{ ...defaultDataSource }]
+  })
+
+  return {
+    dataFields,
+    tableData,
+    originalTableData,
+    selectedBlockId,
+    fullscreenPreview,
+    loading,
+    reportConfig
+  }
+}
+
 const defaultTableStyle: TableStyle = {
   headerBgColor: '#409eff',
   headerTextColor: '#ffffff',
@@ -62,17 +89,20 @@ const defaultConfig: ReportConfig = {
 }
 
 export function useReportDesigner() {
-  const dataFields = ref<DataField[]>([...mockDataFields])
-  const tableData = ref<MockDataItem[]>([...mockTableData])
-  const originalTableData = ref<MockDataItem[]>([...mockTableData])
-  const selectedBlockId = ref<string | null>(null)
-  const fullscreenPreview = ref<FullscreenPreviewState>({ visible: false, title: '' })
-  const loading = ref(false)
+  // 使用单例状态，确保所有组件共享同一个状态
+  if (!singletonState) {
+    singletonState = createState()
+  }
 
-  const reportConfig = ref<ReportConfig>({
-    ...defaultConfig,
-    dataSources: [{ ...defaultDataSource }]
-  })
+  const {
+    dataFields,
+    tableData,
+    originalTableData,
+    selectedBlockId,
+    fullscreenPreview,
+    loading,
+    reportConfig
+  } = singletonState
 
   const selectedBlock = computed(() => {
     if (!selectedBlockId.value) return null

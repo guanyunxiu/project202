@@ -18,6 +18,8 @@
               <div 
                 class="component-item"
                 :class="`component-type-${element.componentType}`"
+                draggable="true"
+                @dragstart="handleComponentDragStart($event, element)"
               >
                 <el-icon class="component-icon">
                   <component :is="getComponentIcon(element.componentType!)" />
@@ -46,6 +48,8 @@
               <div 
                 class="field-item" 
                 :class="`field-type-${element.type}`"
+                draggable="true"
+                @dragstart="handleFieldDragStart($event, element)"
                 @dblclick="handleDoubleClick(element)"
               >
                 <el-icon class="field-icon">
@@ -171,6 +175,18 @@ function handleCloneField(field: DataField) {
 
 function handleCloneComponent(comp: DraggableComponent) {
   return { ...comp, __isComponent: true }
+}
+
+function handleComponentDragStart(event: DragEvent, comp: DraggableComponent) {
+  const dragData = { ...comp, __isComponent: true }
+  event.dataTransfer!.setData('text/plain', JSON.stringify(dragData))
+  event.dataTransfer!.effectAllowed = 'copy'
+}
+
+function handleFieldDragStart(event: DragEvent, field: DataField) {
+  const dragData = { ...field, __isField: true }
+  event.dataTransfer!.setData('text/plain', JSON.stringify(dragData))
+  event.dataTransfer!.effectAllowed = 'copy'
 }
 
 function handleDoubleClick(field: DataField) {
