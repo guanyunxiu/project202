@@ -12,17 +12,20 @@
     
     <div class="canvas-content">
       <div class="title-config">
-        <el-form :inline="true" :model="localConfig" class="title-form">
+        <el-form :inline="true" :model="reportConfig" class="title-form">
           <el-form-item label="报表标题">
             <el-input 
-              v-model="localConfig.title" 
+              :model-value="reportConfig.title" 
+              @update:model-value="handleTitleUpdate('title', $event)"
               placeholder="请输入报表标题" 
-              @input="handleTitleChange"
               style="width: 240px"
             />
           </el-form-item>
           <el-form-item label="标题对齐">
-            <el-radio-group v-model="localConfig.titleAlign" @change="handleTitleChange">
+            <el-radio-group 
+              :model-value="reportConfig.titleAlign" 
+              @update:model-value="handleTitleUpdate('titleAlign', $event)"
+            >
               <el-radio-button label="left">左对齐</el-radio-button>
               <el-radio-button label="center">居中</el-radio-button>
               <el-radio-button label="right">右对齐</el-radio-button>
@@ -30,10 +33,10 @@
           </el-form-item>
           <el-form-item label="字体大小">
             <el-input-number 
-              v-model="localConfig.titleFontSize" 
+              :model-value="reportConfig.titleFontSize" 
+              @update:model-value="handleTitleUpdate('titleFontSize', $event)"
               :min="12" 
               :max="36" 
-              @change="handleTitleChange"
             />
           </el-form-item>
         </el-form>
@@ -51,14 +54,14 @@
           @drop="handleDrop"
         >
           <draggable
-            v-model="localColumns"
+            v-model="columnsModel"
             group="fields"
             item-key="id"
             class="columns-list"
             ghost-class="ghost"
             chosen-class="chosen"
             drag-class="drag"
-            @end="handleDragEnd"
+            @change="handleDragChange"
           >
             <template #item="{ element }">
               <div 
@@ -101,7 +104,7 @@
             </template>
           </draggable>
           
-          <div v-if="localColumns.length === 0" class="empty-tip">
+          <div v-if="columns.length === 0" class="empty-tip">
             <el-icon class="empty-icon"><DocumentAdd /></el-icon>
             <p>请从左侧拖拽字段到此处</p>
             <p class="empty-sub">或双击左侧字段添加</p>
@@ -121,11 +124,11 @@
           <h2 
             class="report-title" 
             :style="{
-              textAlign: localConfig.titleAlign,
-              fontSize: localConfig.titleFontSize + 'px'
+              textAlign: reportConfig.titleAlign,
+              fontSize: reportConfig.titleFontSize + 'px'
             }"
           >
-            {{ localConfig.title || '未命名报表' }}
+            {{ reportConfig.title || '未命名报表' }}
           </h2>
           <el-table 
             :data="tableData" 
@@ -163,7 +166,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, computed } from 'vue'
+import { ref, computed } from 'vue'
 import draggable from 'vuedraggable'
 import { Rank, Close, DocumentAdd, Download } from '@element-plus/icons-vue'
 import type { TableColumn, ReportConfig, DataField, MockDataItem } from '@/types'
@@ -186,20 +189,21 @@ const emit = defineEmits<{
   (e: 'update-columns', columns: TableColumn[]): void
 }>()
 
-const localColumns = ref<TableColumn[]>([...props.columns])
-const localConfig = ref<ReportConfig>({ ...props.reportConfig })
 const tableData = ref<MockDataItem[]>([...mockTableData])
 
-watch(() => props.columns, (newCols) => {
-  localColumns.value = [...newCols]
-}, { deep: true })
-
-watch(() => props.reportConfig, (newConfig) => {
-  localConfig.value = { ...newConfig }
-}, { deep: true })
+const columnsModel = computed({
+  get: () => [...props.columns],
+  set: (value: TableColumn[]) => {
+    const updatedColumns = value.map((col, index) => ({
+      ...col,
+      order: index
+    }))
+    emit('update-columns', updatedColumns)
+  }
+})
 
 const visibleColumns = computed(() => {
-  return localColumns.value
+  return [...props.columns]
     .filter((col: TableColumn) => col.visible)
     .sort((a: TableColumn, b: TableColumn) => a.order - b.order)
 })
@@ -208,11 +212,26 @@ function handleDrop(event: DragEvent) {
   event.preventDefault()
 }
 
+function handleDragChange(event: any) {
+  if (event.added) {
+    const newField = event.added.element
+    if (newField && !newField.columnName) {
+      const tempId = newField.id
+      const currentColumns = columnsModel.value.filter(
+        (col: TableColumn) => col.id !== tempId || col.columnName
+      )
+      emit('update-columns', currentColumns)
+      emit('add-field', newField)
+    }
+  }
+}
+
 function handleDragEnd() {
-  localColumns.value.forEach((col: TableColumn, index: number) => {
-    col.order = index
-  })
-  emit('update-columns', [...localColumns.value])
+  const updatedColumns = props.columns.map((col: TableColumn, index: number) => ({
+    ...col,
+    order: index
+  }))
+  emit('update-columns', updatedColumns)
 }
 
 function handleSelectColumn(columnId: string) {
@@ -223,8 +242,8 @@ function handleRemoveColumn(columnId: string) {
   emit('remove-column', columnId)
 }
 
-function handleTitleChange() {
-  emit('update-config', { ...localConfig.value })
+function handleTitleUpdate(key: keyof ReportConfig, value: any) {
+  emit('update-config', { [key]: value })
 }
 
 function getAlignLabel(align: string) {

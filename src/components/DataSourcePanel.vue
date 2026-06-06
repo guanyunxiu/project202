@@ -69,7 +69,6 @@ function getTypeLabel(type: string) {
 }
 
 function handleClone(field: DataField) {
-  emit('add-field', field)
   return { ...field }
 }
 </script>
